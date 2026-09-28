@@ -1,0 +1,5 @@
+node_modules/
+web/dist/
+# Built by scripts/build-compiler.sh
+web/public/compcert/
+.DS_Store

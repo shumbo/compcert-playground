@@ -19,14 +19,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # CompCert (proofs checked, extracted, compiled with wasm_of_ocaml) and
       # mcpp, built in Docker.  Layers are cached, so only the first run (or a
       # change to compiler/) pays for the full build.
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - name: Build compiler artifacts
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: compiler
           target: artifacts
@@ -34,12 +34,12 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
       - name: Build site
@@ -50,7 +50,7 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: web/dist
 
@@ -62,4 +62,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

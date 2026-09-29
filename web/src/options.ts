@@ -31,6 +31,8 @@ export type Options = {
   extra: string;
   rocqMode: RocqMode;
   normalize: boolean;
+  /** Hide declarations from headers, builtins and runtime helpers. */
+  focus: boolean;
 };
 
 export const DEFAULT_OPTIONS: Options = {
@@ -46,6 +48,7 @@ export const DEFAULT_OPTIONS: Options = {
   extra: '',
   rocqMode: 'clight',
   normalize: false,
+  focus: false,
 };
 
 /** Split a command line on whitespace, honouring simple quotes. */

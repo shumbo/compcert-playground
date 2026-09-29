@@ -118,7 +118,12 @@ export function OptionsPanel({ options, onChange, onClose }: Props) {
         <button
           className="button"
           onClick={() =>
-            onChange({ ...DEFAULT_OPTIONS, rocqMode: options.rocqMode, normalize: options.normalize })
+            onChange({
+              ...DEFAULT_OPTIONS,
+              rocqMode: options.rocqMode,
+              normalize: options.normalize,
+              focus: options.focus,
+            })
           }
         >
           Reset to defaults

@@ -63,7 +63,28 @@ $1/s' driver/Configuration.ml
   echo '  fun () -> List.iter (fun f -> f ()) saved'
 } > driver/PlaygroundFlags.ml
 
-cp "$here/PlaygroundCore.ml" driver/
+# Printers and exporters: route the lists of global definitions through
+# PlaygroundFilter so that the playground can hide declarations that do not
+# come from the user's file.  Each substitution must apply exactly as often
+# as expected, so that an upstream change breaks the build instead of
+# silently disabling the filter.
+patch_count() { # <file> <expected count> <perl substitution>
+  perl -0pi -e "\$n = ($3); END { die \"$1: expected $2 substitution(s), got \$n\\n\" unless \$n == $2 }" "$1"
+}
+patch_count cparser/Cprint.ml 1 's/List\.iter \(globdecl pp\) prog;/List.iter (globdecl pp) (PlaygroundFilter.globdecls prog);/g'
+patch_count cfrontend/PrintCsyntax.ml 2 's/\bprog\.Ctypes\.prog_defs\b/(PlaygroundFilter.defs prog.Ctypes.prog_defs)/g'
+patch_count cfrontend/PrintClight.ml 2 's/\bprog\.prog_defs\b/(PlaygroundFilter.defs prog.prog_defs)/g'
+for f in backend/PrintCminor.ml backend/PrintRTL.ml backend/PrintLTL.ml backend/PrintMach.ml; do
+  patch_count "$f" 1 's/\bprog\.prog_defs\b/(PlaygroundFilter.defs prog.prog_defs)/g'
+done
+patch_count backend/PrintAsm.ml 1 's/\bp\.prog_defs\b/(PlaygroundFilter.defs p.prog_defs)/g'
+for f in export/ExportCsyntax.ml export/ExportClight.ml; do
+  patch_count "$f" 2 's/(List\.iter \(print_globdef p\)|print_list print_ident_globdef p) prog\.Ctypes\.prog_defs/$1 (PlaygroundFilter.defs prog.Ctypes.prog_defs)/g'
+  patch_count "$f" 1 's/print_list ident p prog\.Ctypes\.prog_public/print_list ident p (PlaygroundFilter.idents prog.Ctypes.prog_public)/g'
+done
+patch_count export/ExportBase.ml 1 's/\(fun \(id, name\) ->\n      try/(fun (id, name) ->\n      if not (PlaygroundFilter.hidden id) then\n      try/g'
+
+cp "$here/PlaygroundFilter.ml" "$here/PlaygroundCore.ml" driver/
 
 # --- Build ---
 

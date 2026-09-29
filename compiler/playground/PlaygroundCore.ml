@@ -136,8 +136,66 @@ let restore_atoms () =
 (* Run [f] with fresh diagnostics, turning CompCert's error exits into a
    failed [output]. *)
 
-let run args f =
+(* "Focus" mode: hide globals that do not come from the user's file, i.e.
+   declarations from headers, builtins and CompCert's runtime helpers.
+   Where each global was declared is taken from the C AST; identifiers that
+   do not appear there (locals, temporaries, string literals) are shown,
+   except for builtins and runtime helpers. *)
+
+(* Global name -> is it declared or defined in the user's file? *)
+let declared_in_user_file : (string, bool) Hashtbl.t = Hashtbl.create 97
+
+let record_declarations filename (ast: C.program) =
+  Hashtbl.reset declared_in_user_file;
+  List.iter (fun (g: C.globdecl) ->
+      let name =
+        match g.gdesc with
+        | C.Gdecl (_, id, _, _) -> Some id.C.name
+        | C.Gfundef fd -> Some fd.C.fd_name.C.name
+        | _ -> None in
+      match name with
+      | None -> ()
+      | Some n ->
+          let here = fst g.gloc = filename in
+          let before = Option.value ~default:false
+              (Hashtbl.find_opt declared_in_user_file n) in
+          Hashtbl.replace declared_in_user_file n (before || here))
+    ast
+
+let is_prefix p s =
+  String.length s >= String.length p && String.sub s 0 (String.length p) = p
+
+let set_focus filename focus =
+  PlaygroundFilter.enabled := focus;
+  PlaygroundFilter.hide_loc := (fun (file, _) -> file <> filename);
+  PlaygroundFilter.hide_ident := (fun id ->
+    let name = Camlcoq.extern_atom id in
+    match Hashtbl.find_opt declared_in_user_file name with
+    | Some user -> not user
+    | None -> is_prefix "__builtin_" name || is_prefix "__compcert_" name)
+
+(* Frontend.parse_c_file, keeping hold of the C AST for [record_declarations]. *)
+
+let parse_c_file sourcename ifile =
+  Debug.init_compile_unit sourcename;
+  Sections.initialize ();
+  CPragmas.reset ();
+  let ast =
+    Parse.preprocessed_file
+      ~unblock:true
+      ~switch_norm:(if !option_funstructured_switch then `Full else `Partial)
+      ~struct_passing:!option_fstruct_passing
+      ~packed_structs:!option_fpacked_structs
+      sourcename ifile in
+  record_declarations sourcename ast;
+  Cprint.print_if ast;
+  let csyntax = C2C.convertProgram ast in
+  PrintCsyntax.print_if csyntax;
+  csyntax
+
+let run ?(focus = false) ~filename args f =
   PlaygroundFlags.restore ();
+  set_focus filename focus;
   Diagnostics.reset ();
   ignore (flush_diagnostics ());
   restore_atoms ();
@@ -164,6 +222,7 @@ let run args f =
     | e ->
         Format.eprintf "internal error: %s@." (Printexc.to_string e); false in
   clear_destinations ();
+  PlaygroundFilter.enabled := false;
   (* Some errors (e.g. from the parser) go straight to stderr; the host
      captures those, so make sure they have been written out. *)
   flush stdout; flush stderr;
@@ -171,8 +230,8 @@ let run args f =
 
 (* From preprocessed C to assembly, with all intermediate dumps. *)
 
-let compile ~filename ~source ~args =
-  run args (fun add ->
+let compile ?focus ~filename ~source ~args () =
+  run ?focus ~filename args (fun add ->
     let ifile = scratch ^ ".i" in
     write_file ifile source;
     let dest ext = Some (scratch ^ ext) in
@@ -197,7 +256,7 @@ let compile ~filename ~source ~args =
       add "mach" (read_file (scratch ^ ".mach")) in
     Fun.protect ~finally:(fun () -> collect (); ignore (read_file ifile))
       (fun () ->
-        let csyntax = Frontend.parse_c_file filename ifile in
+        let csyntax = parse_c_file filename ifile in
         match Compiler.apply_partial
                 (Compiler.transf_c_program csyntax)
                 Asmexpand.expand_program with
@@ -222,12 +281,12 @@ let to_string print =
   Format.pp_print_flush fmt ();
   Buffer.contents buf
 
-let export ~filename ~source ~args ~mode ~normalize =
-  run args (fun add ->
+let export ?focus ~filename ~source ~args ~mode ~normalize () =
+  run ?focus ~filename args (fun add ->
     let ifile = scratch ^ ".i" in
     write_file ifile source;
     Fun.protect ~finally:(fun () -> ignore (read_file ifile)) (fun () ->
-      let csyntax = Frontend.parse_c_file filename ifile in
+      let csyntax = parse_c_file filename ifile in
       match mode with
       | Csyntax ->
           add "rocq" (Some (to_string (fun fmt ->

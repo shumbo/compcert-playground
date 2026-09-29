@@ -8,6 +8,8 @@ export type CompileRequest = {
   args: string[];
   /** clightgen -normalize for the Clight export. */
   normalize: boolean;
+  /** Only show what comes from the user's file. */
+  focus: boolean;
 };
 
 export type Diagnostic = {
@@ -27,6 +29,9 @@ export type CompileResult = {
   dumps: Dumps;
   /** The program as Rocq terms, as clightgen -csyntax / -clight print it. */
   ast: Partial<Record<RocqMode, string>>;
+  /** With `focus`: the ASTs without declarations from outside the user's file
+   *  (for display; they do not compile on their own). */
+  astFocused?: Partial<Record<RocqMode, string>>;
   /** Raw compiler/preprocessor messages, as they would appear in a terminal. */
   log: string;
   diagnostics: Diagnostic[];

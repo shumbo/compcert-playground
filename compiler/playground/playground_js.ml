@@ -16,22 +16,24 @@ let to_js (o : PlaygroundCore.output) =
 let args_of_js a =
   Array.map Js.to_string (Js.to_array a)
 
-let compile filename source args =
+let compile filename source args focus =
   to_js (PlaygroundCore.compile
+           ~focus:(Js.to_bool focus)
            ~filename:(Js.to_string filename)
            ~source:(Js.to_string source)
-           ~args:(args_of_js args))
+           ~args:(args_of_js args) ())
 
-let export filename source args mode normalize =
+let export filename source args mode normalize focus =
   let mode =
     if Js.to_string mode = "csyntax"
     then PlaygroundCore.Csyntax
     else PlaygroundCore.Clight in
   to_js (PlaygroundCore.export
+           ~focus:(Js.to_bool focus)
            ~filename:(Js.to_string filename)
            ~source:(Js.to_string source)
            ~args:(args_of_js args)
-           ~mode ~normalize:(Js.to_bool normalize))
+           ~mode ~normalize:(Js.to_bool normalize) ())
 
 let () =
   Js.Unsafe.set Js.Unsafe.global (Js.string "compcert")

@@ -39,17 +39,21 @@ const AST_MODE: Partial<Record<ViewId, RocqMode>> = { compcert_c: 'csyntax', cli
 
 function contentOf(
   r: CompileResult | null, view: ViewId, rtlPass: number, ast: boolean, options: Options,
+  complete = false,
 ) {
   if (!r) return undefined;
+  // In focus mode the AST is displayed without outside declarations, but
+  // copies and downloads always get the complete (compilable) file.
+  const asts = !complete && options.focus && r.astFocused ? r.astFocused : r.ast;
   const mode = AST_MODE[view];
-  if (ast && mode) return r.ast[mode];
+  if (ast && mode) return asts[mode];
   switch (view) {
     case 'preprocessed':
       return r.preprocessed;
     case 'rtl':
       return r.dumps[`rtl.${rtlPass}`];
     case 'rocq':
-      return r.ast[options.rocqMode];
+      return asts[options.rocqMode];
     default:
       return r.dumps[view];
   }
@@ -63,8 +67,8 @@ export function OutputPane(props: Props) {
 
   const astMode = AST_MODE[pane.view];
   const showAst = pane.view === 'rocq' || (!!astMode && pane.ast);
-  const get = (r: CompileResult | null, pass = pane.rtlPass) =>
-    contentOf(r, pane.view, pass, pane.ast, options);
+  const get = (r: CompileResult | null, pass = pane.rtlPass, complete = false) =>
+    contentOf(r, pane.view, pass, pane.ast, options, complete);
 
   let text = get(result);
   let previous = pane.view === 'rtl' && pane.rtlPass > 0 ? get(result, pane.rtlPass - 1) : undefined;
@@ -74,6 +78,7 @@ export function OutputPane(props: Props) {
     previous = pane.view === 'rtl' && pane.rtlPass > 0 ? get(lastGood, pane.rtlPass - 1) : undefined;
     stale = text !== undefined;
   }
+  const exported = showAst ? get(stale ? lastGood : result, pane.rtlPass, true) : text;
 
   const showDiff = pane.view === 'rtl' && pane.diff && pane.rtlPass > 0 && previous !== undefined;
   const pass = RTL_PASSES[pane.rtlPass];
@@ -81,15 +86,15 @@ export function OutputPane(props: Props) {
     && (!options.optimize || !options.passes[pass.flag as keyof Options['passes']]);
 
   const copy = async () => {
-    if (text === undefined) return;
-    await navigator.clipboard.writeText(text);
+    if (exported === undefined) return;
+    await navigator.clipboard.writeText(exported);
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
   };
   const download = () => {
-    if (text === undefined) return;
+    if (exported === undefined) return;
     const stem = filename.replace(/\.c$/, '');
-    const blob = new Blob([text], { type: 'text/plain' });
+    const blob = new Blob([exported], { type: 'text/plain' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = pane.view === 'rtl' ? `${stem}.rtl.${pane.rtlPass}`
@@ -263,6 +268,12 @@ export function OutputPane(props: Props) {
 
       {stale && (
         <div className="banner">Compilation failed — showing the last successful output.</div>
+      )}
+      {showAst && options.focus && text !== undefined && (
+        <div className="banner subtle">
+          Declarations from outside your file are hidden. Copy and Download give the complete .v
+          file.
+        </div>
       )}
       {passDisabled && (
         <div className="banner subtle">

@@ -65,6 +65,7 @@ export default function App() {
         filename: FILENAME,
         args,
         normalize: options.normalize,
+        focus: options.focus,
       });
       if (!r) return; // superseded by a newer request
       setResult(r);
@@ -73,7 +74,7 @@ export default function App() {
     }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, argsKey, options.normalize]);
+  }, [source, argsKey, options.normalize, options.focus]);
 
   // Persist the session.
   useEffect(() => {
@@ -209,6 +210,19 @@ export default function App() {
             />
           )}
         </div>
+        <label
+          className="switch"
+          title="Hide declarations that come from headers, builtins and CompCert's runtime helpers"
+        >
+          <input
+            type="checkbox"
+            role="switch"
+            checked={options.focus}
+            onChange={(e) => setOptions({ ...options, focus: e.target.checked })}
+          />
+          <span className="track" aria-hidden="true" />
+          Only my code
+        </label>
         <code className="cmdline" title="Equivalent command line">
           ccomp {args.map((a) => (/\s/.test(a) ? JSON.stringify(a) : a)).join(' ')}
           {args.length ? ' ' : ''}-S {FILENAME}

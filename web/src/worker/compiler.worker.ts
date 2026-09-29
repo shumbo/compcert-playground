@@ -6,9 +6,10 @@ import type { CompileRequest, CompileResult, Diagnostic, WorkerMessage } from '.
 type CompcertOutput = { ok: boolean; diagnostics: string; dumps: Record<string, string> };
 type Compcert = {
   version: string;
-  compile(filename: string, source: string, args: string[]): CompcertOutput;
+  compile(filename: string, source: string, args: string[], focus: boolean): CompcertOutput;
   exportRocq(
     filename: string, source: string, args: string[], mode: string, normalize: boolean,
+    focus: boolean,
   ): CompcertOutput;
 };
 
@@ -141,6 +142,18 @@ async function preprocess(filename: string, source: string, args: string[]) {
   return { ok: status === 0, output, log: log.replaceAll('/src/', '') };
 }
 
+/** Keep only the lines of preprocessed output that come from [filename]. */
+function onlyFile(pre: string, filename: string) {
+  const out: string[] = [];
+  let current = filename;
+  for (const line of pre.split('\n')) {
+    const m = /^# \d+ "(.*)"/.exec(line);
+    if (m) current = m[1];
+    else if (current === filename) out.push(line);
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+}
+
 // --- Diagnostics ---------------------------------------------------------
 
 const DIAG_RE = /^(.+?):(\d+)(?::(\d+))?:\s*(fatal error|error|warning|syntax error)?:?\s*(.*)$/;
@@ -196,18 +209,21 @@ async function compile(req: CompileRequest): Promise<CompileResult> {
   const args = req.args.filter((a) => !/^-[DUI]/.test(a));
 
   stdio = '';
-  const r = compcert.compile(filename, pre.output, args);
+  const r = compcert.compile(filename, pre.output, args, req.focus);
   const ccLog = stdio + r.diagnostics;
 
   // The ASTs, as Rocq terms. Errors here duplicate the ones above, except
   // for problems specific to the exporters.
   const ast: CompileResult['ast'] = {};
+  const astFocused: CompileResult['ast'] = {};
   let astLog = '';
   for (const mode of ['csyntax', 'clight'] as const) {
-    stdio = '';
-    const x = compcert.exportRocq(filename, pre.output, args, mode, req.normalize);
-    if (x.ok) ast[mode] = x.dumps.rocq;
-    else if (!astLog && stdio + x.diagnostics !== ccLog) astLog = stdio + x.diagnostics;
+    for (const focus of req.focus ? [false, true] : [false]) {
+      stdio = '';
+      const x = compcert.exportRocq(filename, pre.output, args, mode, req.normalize, focus);
+      if (x.ok) (focus ? astFocused : ast)[mode] = x.dumps.rocq;
+      else if (!astLog && stdio + x.diagnostics !== ccLog) astLog = stdio + x.diagnostics;
+    }
   }
 
   const log = [pre.log, ccLog, astLog]
@@ -216,9 +232,10 @@ async function compile(req: CompileRequest): Promise<CompileResult> {
   return {
     ...base,
     ok: r.ok,
-    preprocessed: pre.output,
+    preprocessed: req.focus ? onlyFile(pre.output, filename) : pre.output,
     dumps: r.dumps,
     ast,
+    astFocused: req.focus ? astFocused : undefined,
     log,
     diagnostics: parseDiagnostics(log, filename),
     timeMs: performance.now() - t0,
